@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Pocket Prediction – Test</title>
+<!-- Lets the phone use all its CPU cores when there is no GPU path (needs its own site; harmless elsewhere). -->
+<script src="coi-serviceworker.min.js"></script>
+<style>
+  :root { --bg:#0d0d0f; --fg:#f2efe8; --dim:#8a867d; --line:#26252a; --accent:#d9b46a; --ok:#5fc27e; --red:#e0534a; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.4 -apple-system, "SF Pro Text", system-ui, sans-serif; }
+  body { padding: calc(env(safe-area-inset-top) + 14px) 16px calc(env(safe-area-inset-bottom) + 24px); min-height:100vh; }
+  h1 { font:600 12px/1 -apple-system, system-ui; letter-spacing:.14em; text-transform:uppercase; color:var(--dim); margin:0 0 14px; }
+  .screen { display:none; } .screen.on { display:block; }
+  .step { font-size:26px; font-weight:650; letter-spacing:-.01em; margin:2px 0 6px; }
+  .hint { color:var(--dim); margin:0 0 14px; font-size:15px; }
+  button, label.btn { display:flex; align-items:center; justify-content:center; width:100%; min-height:54px; border:0; border-radius:14px;
+    background:var(--fg); color:#111; font:600 17px -apple-system, system-ui; margin:10px 0; cursor:pointer; }
+  .ghost { background:transparent !important; color:var(--fg) !important; border:1px solid var(--line) !important; }
+  input[type=file] { display:none; }
+  .bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden; margin:12px 0; }
+  .bar > i { display:block; height:100%; width:0; background:var(--accent); transition:width .15s, background .2s; }
+  .bar.done > i { background:var(--ok); }
+  .status { color:var(--dim); font-size:14px; min-height:20px; }
+  .camwrap { position:relative; border-radius:14px; overflow:hidden; background:#000; border:1px solid var(--line); }
+  .camwrap video, .camwrap canvas { display:block; width:100%; }
+  .camwrap canvas { position:absolute; inset:0; height:100%; }
+  .meterRow { display:flex; align-items:baseline; gap:12px; margin-top:12px; }
+  .count { font-size:44px; font-weight:700; letter-spacing:-.03em; line-height:1; }
+  .count small { font-size:15px; color:var(--dim); font-weight:500; letter-spacing:0; }
+  .meterMsg { flex:1; text-align:right; font-size:15px; font-weight:600; }
+  .meterMsg.ok { color:var(--ok); } .meterMsg.warn { color:var(--accent); }
+  /* Full-screen scanner */
+  .scanner { position:fixed; inset:0; z-index:4; background:#000; display:flex; flex-direction:column; }
+  .scam { position:relative; flex:1; min-height:0; overflow:hidden; }
+  .scam video, .scam canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+  .guide { position:absolute; inset:9% 6%; pointer-events:none; }
+  .guide i { position:absolute; width:28px; height:28px; border:3px solid rgba(255,255,255,.85); }
+  .guide i:nth-child(1) { left:0; top:0; border-right:0; border-bottom:0; border-radius:10px 0 0 0; }
+  .guide i:nth-child(2) { right:0; top:0; border-left:0; border-bottom:0; border-radius:0 10px 0 0; }
+  .guide i:nth-child(3) { left:0; bottom:0; border-right:0; border-top:0; border-radius:0 0 0 10px; }
+  .guide i:nth-child(4) { right:0; bottom:0; border-left:0; border-top:0; border-radius:0 0 10px 0; }
+  .scanline { position:absolute; left:6%; right:6%; height:2px; top:9%; background:linear-gradient(90deg,transparent,var(--accent),transparent);
+    animation:sweep 2.2s ease-in-out infinite alternate; opacity:.8; }
+  .done .scanline { display:none; }
+  .done .guide i { border-color:var(--ok); }
+  @keyframes sweep { to { top:91%; } }
+  .stop { position:absolute; top:calc(env(safe-area-inset-top) + 10px); right:14px; width:36px; height:36px; border-radius:18px;
+    background:rgba(0,0,0,.5); color:#fff; display:flex; align-items:center; justify-content:center; font-size:16px; }
+  .spanel { background:var(--bg); padding:10px 14px calc(env(safe-area-inset-bottom) + 10px); }
+  .spanel .meterRow { margin-top:2px; }
+  .spanel .count { font-size:36px; }
+  .spanel .row button { min-height:44px; margin:6px 0 0; font-size:15px; }
+  .grid { display:grid; grid-template-columns:22px repeat(13, 1fr); gap:3px; margin:6px 0 4px; }
+  .grid b { font-size:15px; display:flex; align-items:center; justify-content:center; }
+  .grid span { height:26px; border-radius:5px; background:#1b1a1f; color:#4a4850; display:flex; align-items:center; justify-content:center;
+    font:700 11px ui-monospace, Menlo, monospace; transition:background .15s, color .15s; }
+  .grid span.chk { background:#3a3220; color:var(--accent); }
+  .grid span.ok { background:var(--ok); color:#06210f; }
+  .grid .redrow { color:var(--red); }
+  .strip { position:relative; height:26px; margin:6px 0 4px; }
+  .strip i { position:absolute; top:6px; width:3px; height:14px; border-radius:2px; background:var(--fg); }
+  .strip i.gap { background:var(--red); top:0; height:26px; width:4px; }
+  .strip i.pend { background:var(--accent); top:0; height:26px; width:4px; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0 14px; }
+  .chip { font:600 14px ui-monospace, Menlo, monospace; padding:5px 7px; border-radius:7px; background:#1b1a1f; border:1px solid var(--line); }
+  .chip.r { color:var(--red); }
+  canvas.preview { width:100%; border-radius:12px; border:1px solid var(--line); margin:8px 0; }
+  .row { display:flex; gap:10px; } .row > * { flex:1; }
+  .settings { margin-top:24px; border-top:1px solid var(--line); padding-top:12px; color:var(--dim); font-size:14px; }
+  .settings label { display:flex; justify-content:space-between; align-items:center; padding:7px 0; gap:12px; }
+  select { background:#1b1a1f; color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:7px; font-size:15px; max-width:60%; }
+  #wait { position:fixed; inset:0; background:#000; display:none; z-index:5; }
+  #wait.on { display:block; }
+  #wait .tiny { position:absolute; bottom:calc(env(safe-area-inset-bottom) + 14px); width:100%; text-align:center; color:#262626; font-size:12px; }
+  #result { text-align:center; padding-top:10vh; }
+  #result .big { font-size:120px; font-weight:700; line-height:1; letter-spacing:-.04em; }
+  #result .name { font-size:30px; font-weight:600; margin-top:10px; }
+  #result .sub { color:var(--dim); margin-top:18px; font-size:14px; }
+  .red { color:var(--red); }
+  .perf { font:12px ui-monospace, Menlo, monospace; color:var(--dim); margin-top:8px; }
+</style>
+</head>
+<body>
+<h1>Pocket Prediction · test build 2</h1>
+
+<section class="screen on" id="s-load">
+  <div class="step">Loading the card reader…</div>
+  <p class="hint">About 50 MB the first time. After that everything runs on the phone: no internet needed during the trick.</p>
+  <div class="bar"><i id="loadbar"></i></div>
+  <div class="status" id="loadmsg"></div>
+</section>
+
+<section class="screen" id="s-home">
+  <div class="step">Ready</div>
+  <p class="hint">Spread the deck face up. Tap below, then move the phone slowly along the spread until all 52 cards are green.</p>
+  <button id="homeScan">Scan the spread</button>
+</section>
+
+<!-- STEP 1 LIVE: sweep scan -->
+<section class="screen" id="s-sweep">
+  <div class="scanner">
+    <div class="scam">
+      <video id="video" playsinline muted autoplay></video><canvas id="overlay"></canvas>
+      <div class="guide"><i></i><i></i><i></i><i></i></div>
+      <div class="scanline"></div>
+      <div class="stop" id="sweepClose">✕</div>
+    </div>
+    <div class="spanel">
+      <div class="meterRow"><div class="count" id="sCount">0<small> / 52</small></div><div class="meterMsg" id="sMsg">Point at the spread</div></div>
+      <div class="bar" id="sBarWrap"><i id="sBar"></i></div>
+      <div class="grid" id="grid"></div>
+      <div class="strip" id="strip"></div>
+      <div class="row">
+        <button class="ghost" id="sweepRestart">Start over</button>
+        <button class="ghost" id="sweepReview">See the order</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- STEP 1 PHOTO fallback -->
+<section class="screen" id="s-scan">
+  <div class="step">1. Scan the spread</div>
+  <p class="hint">Spread the deck face up, left to right, every corner showing. Fill the frame with the spread.</p>
+  <label class="btn">Take photo of spread<input type="file" id="spreadFile" accept="image/*" capture="environment"></label>
+  <div class="bar" id="scanbarWrap" style="display:none"><i id="scanbar"></i></div>
+  <div class="status" id="scanmsg"></div>
+</section>
+
+<section class="screen" id="s-review">
+  <div class="step">Cards read</div>
+  <p class="hint" id="endsHint"></p>
+  <div class="count" id="count">0</div>
+  <p class="hint" id="reviewHint">In order, left to right. Tap a card to remove it if it was misread.</p>
+  <div class="chips" id="chips"></div>
+  <canvas class="preview" id="preview" style="display:none"></canvas>
+  <div class="row">
+    <button class="ghost" id="rescan">Rescan</button>
+    <button id="toWait">Continue</button>
+  </div>
+</section>
+
+<section class="screen" id="s-bottom">
+  <div class="step">2. Read the bottom card</div>
+  <p class="hint" id="bottomHint">Spectator cuts and pockets the top card. Show the bottom card to the back camera, about 20–30 cm above the phone.</p>
+  <button id="goLive">Go face-down (live camera)</button>
+  <label class="btn ghost" id="photoBottomBtn">Take photo of bottom card<input type="file" id="bottomFile" accept="image/*" capture="environment"></label>
+  <div class="status" id="bottommsg"></div>
+  <div class="settings">
+    <label>Test the logic without the camera. Bottom card is:
+      <select id="manualBottom"><option value="">choose…</option></select>
+    </label>
+  </div>
+</section>
+
+<section class="screen" id="s-result">
+  <div id="result">
+    <div class="big" id="resBig"></div>
+    <div class="name" id="resName"></div>
+    <div class="sub" id="resSub"></div>
+  </div>
+  <div style="margin-top:40px">
+    <button class="ghost" id="again">Same deck, read bottom card again</button>
+    <button id="restart">New shuffle, scan again</button>
+  </div>
+</section>
+
+<div class="settings" id="settings">
+  <label>Spread direction
+    <select id="dir">
+      <option value="0">Left→right = top→bottom (deck flipped face up, then spread)</option>
+      <option value="1">Reversed</option>
+    </select>
+  </label>
+  <label>Deck size (the scan can't turn green before this)
+    <select id="deckSize">
+      <option value="52">Full deck: 52</option>
+      <option value="40">At least 40</option>
+      <option value="20">At least 20</option>
+      <option value="2">Any</option>
+    </select>
+  </label>
+  <label>After the scan turns green
+    <select id="autoArm">
+      <option value="1">Go face-down mode automatically</option>
+      <option value="0">Show me the cards first</option>
+    </select>
+  </label>
+  <label>Photo scan detail
+    <select id="detail">
+      <option value="0.6">Normal</option>
+      <option value="0.45" selected>High</option>
+      <option value="0.33">Very high</option>
+    </select>
+  </label>
+  <div class="perf" id="perf"></div>
+</div>
+
+<div id="wait"><div class="tiny" id="waitmsg"></div></div>
+
+<script src="logic.js"></script>
+<script type="module">
+const L = window.TrickLogic;
+const NAMES = ['10C','10D','10H','10S','2C','2D','2H','2S','3C','3D','3H','3S','4C','4D','4H','4S','5C','5D','5H','5S',
+  '6C','6D','6H','6S','7C','7D','7H','7S','8C','8D','8H','8S','9C','9D','9H','9S','AC','AD','AH','AS','JC','JD','JH','JS',
+  'KC','KD','KH','KS','QC','QD','QH','QS'];
+// Read sizes: the model reads close cards best when the picture is SMALL, which is also fastest.
+const SWEEP_SIZES = [480, 384], BOTTOM_SIZES = [224, 288], TILE_SIZE = 480, CONF = 0.4;
+const $ = id => document.getElementById(id);
+let ort, session, engine = '', order = [], liveOK = false, mode = 'idle', wakeLock = null;
+const perf = { n: 0, ms: 0 };
+
+function show(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === id));
+  $('settings').style.display = (id === 's-result' || id === 's-load') ? 'none' : 'block';
+}
+
+/* ---------------- engine: GPU when the phone offers it, otherwise CPU ---------------- */
+async function fetchParts(parts, onBytes) {
+  const chunks = []; let got = 0;
+  for (const p of parts) {
+    const res = await fetch(p); if (!res.ok) throw new Error('Could not load ' + p);
+    const r = res.body.getReader();
+    for (;;) { const { done, value } = await r.read(); if (done) break; chunks.push(value); got += value.length; onBytes(value.length); }
+  }
+  const buf = new Uint8Array(got); let o = 0; for (const c of chunks) { buf.set(c, o); o += c.length; }
+  return buf;
+}
+async function loadEngine() {
+  const TOTAL = 15000000 + 14520971 + 12000000 + 10373878; let got = 0;
+  const tick = n => { got += n; $('loadbar').style.width = (88 * got / TOTAL) + '%'; };
+  ort = await import('./ort.min.mjs');
+  const [wasm, model] = await Promise.all([fetchParts(['rt0.wasm', 'rt1.wasm'], tick), fetchParts(['md0.wasm', 'md1.wasm'], tick)]);
+  ort.env.wasm.wasmBinary = wasm.buffer;
+  ort.env.wasm.wasmPaths = { mjs: new URL('./ort-wasm-simd-threaded.jsep.mjs', location.href).href };
+  ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 2) : 1;
+  $('loadmsg').textContent = 'Starting…';
+  let gpu = false;
+  try { gpu = !!(navigator.gpu && await navigator.gpu.requestAdapter()); } catch (e) {}
+  if (gpu) {
+    try { session = await ort.InferenceSession.create(model, { executionProviders: ['webgpu'], graphOptimizationLevel: 'all' }); engine = 'GPU'; }
+    catch (e) { session = null; }
+  }
+  if (!session) {
+    session = await ort.InferenceSession.create(model, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
+    engine = `CPU ×${ort.env.wasm.numThreads}`;
+  }
+  // Warm up every size we use, so the first real read is not slowed by setup.
+  $('loadmsg').textContent = 'Warming up…';
+  const warm = document.createElement('canvas'); warm.width = warm.height = 64;
+  for (const s of new Set([...SWEEP_SIZES, ...BOTTOM_SIZES, TILE_SIZE])) { await detect(warm, 0, 0, s, s, s); await detect(warm, 0, 0, s, s * 9 / 16, s); }
+  perf.n = 0; perf.ms = 0;
+  $('loadbar').style.width = '100%';
+}
+
+/* ---------------- one read ---------------- */
+const work = document.createElement('canvas');
+const wctx = work.getContext('2d', { willReadFrequently: true });
+const buffers = new Map();
+// Reads a region of src, scaled so its long side is S (rounded up to the model's 32-pixel grid).
+async function detect(src, sx, sy, sw, sh, S) {
+  const t0 = performance.now();
+  const scale = S / Math.max(sw, sh);
+  const W = Math.ceil(sw * scale / 32) * 32, H = Math.ceil(sh * scale / 32) * 32;
+  if (work.width !== W || work.height !== H) { work.width = W; work.height = H; }
+  wctx.fillStyle = 'rgb(114,114,114)'; wctx.fillRect(0, 0, W, H);
+  wctx.drawImage(src, sx, sy, sw, sh, 0, 0, sw * scale, sh * scale);
+  const px = wctx.getImageData(0, 0, W, H).data, N = W * H, key = W + 'x' + H;
+  let input = buffers.get(key); if (!input) buffers.set(key, input = new Float32Array(3 * N));
+  for (let i = 0, j = 0; i < N; i++, j += 4) { input[i] = px[j] / 255; input[N + i] = px[j + 1] / 255; input[2 * N + i] = px[j + 2] / 255; }
+  const out = await session.run({ [session.inputNames[0]]: new ort.Tensor('float32', input, [1, 3, H, W]) });
+  const t = out[session.outputNames[0]], d = t.data, A = t.dims[2], C = t.dims[1] - 4;
+  const dets = [];
+  for (let a = 0; a < A; a++) {
+    let best = 0, cls = -1;
+    for (let c = 0; c < C; c++) { const s = d[(4 + c) * A + a]; if (s > best) { best = s; cls = c; } }
+    if (best < CONF) continue;
+    dets.push({ cls: NAMES[cls], conf: best, x: sx + d[a] / scale, y: sy + d[A + a] / scale, w: d[2 * A + a] / scale, h: d[3 * A + a] / scale });
+  }
+  const ms = performance.now() - t0; perf.n++; perf.ms += ms;
+  if (perf.n % 5 === 0) $('perf').textContent = `${engine} · ${Math.round(perf.ms / perf.n)} ms per read (avg of ${perf.n}) · last ${S}px ${Math.round(ms)} ms`;
+  return nms(dets);
+}
+function nms(dets) {
+  dets.sort((a, b) => b.conf - a.conf); const keep = [];
+  for (const d of dets) if (!keep.some(k => iou(k, d) > (k.cls === d.cls ? 0.5 : 0.6))) keep.push(d);
+  return keep;
+}
+function iou(a, b) {
+  const x1 = Math.max(a.x - a.w / 2, b.x - b.w / 2), x2 = Math.min(a.x + a.w / 2, b.x + b.w / 2);
+  const y1 = Math.max(a.y - a.h / 2, b.y - b.h / 2), y2 = Math.min(a.y + a.h / 2, b.y + b.h / 2);
+  const i = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  return i / (a.w * a.h + b.w * b.h - i);
+}
+const known = dets => dets.filter(d => order.includes(d.cls)).sort((a, b) => b.conf - a.conf)[0] || null;
+
+/* ---------------- live camera loop: reads back to back, never queues stale frames ---------------- */
+const video = $('video');
+let loopGen = 0;
+function runLoop(onFrame) {
+  const gen = ++loopGen;
+  const step = async () => {
+    if (gen !== loopGen) return;
+    if (video.videoWidth) await onFrame(video.videoWidth, video.videoHeight);
+    if (gen !== loopGen) return;
+    if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(step); else requestAnimationFrame(step);
+  };
+  step();
+}
+const stopLoop = () => { loopGen++; };
+
+/* ---------------- step 1 live: sweep ---------------- */
+const scanner = new L.SweepScanner();
+let sweepN = 0, lastDets = [], doneAt = 0;
+function startSweep() {
+  scanner.reset(); sweepN = 0; doneAt = 0; mode = 'sweep';
+  $('sBarWrap').classList.remove('done');
+  renderMeter(scanner.state(performance.now(), +$('deckSize').value), 'few');
+  show('s-sweep');
+  runLoop(async (W, H) => {
+    const S = SWEEP_SIZES[sweepN++ % SWEEP_SIZES.length];
+    lastDets = await detect(video, 0, 0, W, H, S);
+    const now = performance.now();
+    const r = scanner.addFrame(lastDets, now, { x0: 0, y0: 0, x1: W, y1: H });
+    drawOverlay(W, H);
+    const st = scanner.state(now, +$('deckSize').value);
+    renderMeter(st, r);
+    if (st.complete && !doneAt) {
+      doneAt = now; order = st.order;
+      $('sBarWrap').classList.add('done');
+      if ($('autoArm').value === '1') setTimeout(() => { if (mode === 'sweep' && doneAt) { renderChips(); armFaceDown(); } }, 700);
+    }
+    if (!st.complete) doneAt = 0;
+  });
+}
+// 52-card grid: grey = not seen, amber = seen but still checking, green = confirmed.
+const GRID_SUITS = ['S', 'H', 'C', 'D'], GRID_RANKS = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+const SUIT_SYM = { S: '♠', H: '♥', C: '♣', D: '♦' };
+(function buildGrid() {
+  let html = '';
+  for (const s of GRID_SUITS) {
+    html += `<b class="${'HD'.includes(s) ? 'redrow' : ''}">${SUIT_SYM[s]}</b>`;
+    for (const r of GRID_RANKS) html += `<span id="g-${r}${s}">${r === '10' ? '10' : r}</span>`;
+  }
+  $('grid').innerHTML = html;
+})();
+function renderGrid(st) {
+  const ok = new Set(st.order), chk = new Set(st.pendingCards.map(q => q.c));
+  for (const s of GRID_SUITS) for (const r of GRID_RANKS) {
+    const c = r + s, el = $('g-' + c), cls = ok.has(c) ? 'ok' : chk.has(c) ? 'chk' : '';
+    if (el.className !== cls) el.className = cls;
+  }
+}
+function renderMeter(st, r) {
+  renderGrid(st);
+  const target = +$('deckSize').value;
+  $('sCount').innerHTML = `${st.order.length}<small> / ${target === 52 ? 52 : target > 2 ? target + '+' : '?'}</small>`;
+  document.querySelector('.scanner').classList.toggle('done', st.complete);
+  $('sBar').style.width = (100 * st.progress) + '%';
+  const m = $('sMsg');
+  if (st.complete) { m.textContent = `Done ✓  ${L.cardShort(st.order[0])} … ${L.cardShort(st.order[st.order.length - 1])}`; m.className = 'meterMsg ok'; }
+  else if (st.gaps.length) {
+    const g = st.gaps[0];
+    m.textContent = `Card missing between ${L.cardShort(g.after)} and ${L.cardShort(g.before)}: go back over it`; m.className = 'meterMsg warn';
+  } else if (r === 'lost') { m.textContent = 'Lost track: slow down'; m.className = 'meterMsg warn'; }
+  else if (!st.order.length) { m.textContent = 'Point at the spread'; m.className = 'meterMsg'; }
+  else if (st.pendingCards.length && st.enough) { m.textContent = 'Unsure about one card: go back over the spread'; m.className = 'meterMsg warn'; }
+  else if (st.enough && !st.loEnd) { m.textContent = 'Go past the first card'; m.className = 'meterMsg warn'; }
+  else if (st.enough && !st.hiEnd) { m.textContent = 'Go past the last card'; m.className = 'meterMsg warn'; }
+  else if (!st.enough) { m.textContent = `Keep going: ${$('deckSize').value === '52' ? 52 - st.order.length + ' to go' : 'not enough cards yet'}`; m.className = 'meterMsg'; }
+  else { m.textContent = st.pending ? 'Reading…' : 'Hold still to finish'; m.className = 'meterMsg'; }
+  // Strip: every confirmed card as a tick in its place along the spread, gaps in red.
+  const p = st.positions, strip = $('strip');
+  if (p.length < 2) { strip.innerHTML = ''; return; }
+  const lo = p[0], hi = p[p.length - 1], f = x => (100 * (x - lo) / (hi - lo || 1)).toFixed(2) + '%';
+  let html = p.map(x => `<i style="left:${f(x)}"></i>`).join('');
+  for (const g of st.gaps) { const a = p[st.order.indexOf(g.after)], b = p[st.order.indexOf(g.before)]; html += `<i class="gap" style="left:${f((a + b) / 2)}"></i>`; }
+  for (const q of st.pendingCards) if (isFinite(q.p)) html += `<i class="pend" style="left:${f(Math.min(hi, Math.max(lo, q.p)))}"></i>`;
+  strip.innerHTML = html;
+}
+const overlay = $('overlay'), octx = overlay.getContext('2d');
+function drawOverlay(W, H) {
+  if (overlay.width !== W) { overlay.width = W; overlay.height = H; }
+  octx.clearRect(0, 0, W, H);
+  octx.lineWidth = Math.max(2, W / 300); octx.font = `600 ${Math.round(W / 28)}px -apple-system, sans-serif`;
+  for (const d of lastDets) {
+    const ok = scanner.obs.has(d.cls) && scanner.support(d.cls) >= scanner.minSeen;
+    octx.strokeStyle = octx.fillStyle = ok ? '#5fc27e' : '#d9b46a';
+    octx.strokeRect(d.x - d.w / 2, d.y - d.h / 2, d.w, d.h);
+    octx.fillText(L.cardShort(d.cls), d.x - d.w / 2, d.y - d.h / 2 - 4);
+  }
+}
+
+/* ---------------- step 1 photo fallback: one still, read in overlapping tiles ---------------- */
+async function scanPhoto(src, W, H) {
+  show('s-scan');
+  $('scanbarWrap').style.display = 'block';
+  const frac = parseFloat($('detail').value);
+  const s = Math.round(Math.min(W, H) * frac), step = Math.round(s * 0.7), xs = [], ys = [];
+  for (let x = 0; ; x += step) { xs.push(Math.min(x, W - s)); if (x + s >= W) break; }
+  for (let y = 0; ; y += step) { ys.push(Math.min(y, H - s)); if (y + s >= H) break; }
+  const tiles = []; for (const y of ys) for (const x of xs) tiles.push([x, y]);
+  let all = await detect(src, 0, 0, W, H, TILE_SIZE);
+  for (let i = 0; i < tiles.length; i++) {
+    $('scanbar').style.width = (100 * (i + 1) / tiles.length) + '%';
+    $('scanmsg').textContent = `Reading… ${i + 1}/${tiles.length}`;
+    all = all.concat(await detect(src, tiles[i][0], tiles[i][1], s, s, TILE_SIZE));
+  }
+  all = nms(all); order = L.orderFromDetections(all);
+  $('scanbarWrap').style.display = 'none'; $('scanmsg').textContent = '';
+  const cv = $('preview'), k = Math.min(1, 1400 / W); cv.style.display = 'block';
+  cv.width = W * k; cv.height = H * k; const g = cv.getContext('2d'); g.drawImage(src, 0, 0, W, H, 0, 0, cv.width, cv.height);
+  const best = new Map(); for (const d of all) { const c = best.get(d.cls); if (!c || d.conf > c.conf) best.set(d.cls, d); }
+  g.lineWidth = 2; g.font = `bold ${Math.max(12, 30 * k)}px -apple-system, sans-serif`; g.strokeStyle = g.fillStyle = '#d9b46a';
+  for (const d of best.values()) { g.strokeRect((d.x - d.w / 2) * k, (d.y - d.h / 2) * k, d.w * k, d.h * k); g.fillText(L.cardShort(d.cls), (d.x - d.w / 2) * k, (d.y - d.h / 2) * k - 3); }
+  openReview();
+}
+
+/* ---------------- review ---------------- */
+function renderChips() {
+  $('count').textContent = order.length;
+  $('chips').innerHTML = order.map((c, i) => `<span class="chip ${L.isRed(c) ? 'r' : ''}" data-i="${i}">${L.cardShort(c)}</span>`).join('');
+  $('manualBottom').innerHTML = '<option value="">choose…</option>' + order.map(c => `<option value="${c}">${L.cardName(c)}</option>`).join('');
+}
+$('chips').addEventListener('click', e => { const i = e.target.dataset?.i; if (i === undefined) return; order.splice(+i, 1); renderChips(); });
+function openReview() {
+  stopLoop(); mode = 'review'; renderChips();
+  $('endsHint').textContent = order.length ? `Check the spread: it should start with ${L.cardName(order[0])} and end with ${L.cardName(order[order.length - 1])}.` : '';
+  show('s-review');
+}
+
+/* ---------------- step 2: face-down, waiting for the bottom card ---------------- */
+// Guard: after arming, ignore everything until the camera has seen NO card for a moment
+// (phone placed face down), so the spread itself can never be taken as the bottom card.
+async function armFaceDown() {
+  stopLoop(); mode = 'wait';
+  $('wait').classList.add('on'); $('waitmsg').textContent = '';
+  try { wakeLock = await navigator.wakeLock?.request('screen'); } catch (e) {}
+  let n = 0, clearSince = null, ready = false, last = null, streak = 0;
+  runLoop(async (W, H) => {
+    const S = BOTTOM_SIZES[n++ % BOTTOM_SIZES.length];
+    const dets = await detect(video, 0, 0, W, H, S);
+    const now = performance.now();
+    if (!ready) {
+      if (dets.length === 0) { clearSince ??= now; if (now - clearSince > 600) { ready = true; $('waitmsg').textContent = '·'; } }
+      else clearSince = null;
+      return;
+    }
+    const d = known(dets);
+    if (d && d.conf > 0.55) {
+      streak = d.cls === last ? streak + 1 : 1; last = d.cls;
+      if (streak >= 2) reveal(d.cls, 'live camera');   // two reads in a row must agree
+    } else if (!d) { streak = 0; last = null; }
+  });
+}
+function disarm() { stopLoop(); $('wait').classList.remove('on'); try { wakeLock?.release(); } catch (e) {} wakeLock = null; }
+$('wait').addEventListener('click', () => { disarm(); mode = 'bottom'; show('s-bottom'); });
+
+function reveal(bottom, how) {
+  disarm(); mode = 'result';
+  const p = L.pocketCard(order, bottom, $('dir').value === '1');
+  if (!p) { $('bottommsg').textContent = 'That card was not in the scan.'; show('s-bottom'); return; }
+  $('resBig').textContent = L.cardShort(p); $('resBig').className = 'big' + (L.isRed(p) ? ' red' : '');
+  $('resName').textContent = L.cardName(p);
+  $('resSub').textContent = `Bottom card: ${L.cardName(bottom)} · ${how}`;
+  show('s-result');
+}
+
+/* ---------------- camera ---------------- */
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: false,
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } } });
+    video.srcObject = stream; await video.play().catch(() => {});
+    liveOK = true;
+  } catch (e) { liveOK = false; }
+  $('goLive').style.display = liveOK ? 'flex' : 'none';
+  $('photoBottomBtn').classList.toggle('ghost', liveOK);
+}
+const fileToImage = file => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file); });
+const startScan = () => liveOK ? show('s-home') : show('s-scan');
+
+/* ---------------- wiring ---------------- */
+$('spreadFile').addEventListener('change', async e => { const f = e.target.files[0]; if (!f) return; e.target.value = ''; const i = await fileToImage(f); await scanPhoto(i, i.naturalWidth, i.naturalHeight); });
+$('sweepRestart').addEventListener('click', startSweep);
+$('homeScan').addEventListener('click', startSweep);
+$('sweepClose').addEventListener('click', () => { stopLoop(); mode = 'idle'; show('s-home'); });
+$('sweepReview').addEventListener('click', () => { order = scanner.state(performance.now(), 2).order; openReview(); });
+$('rescan').addEventListener('click', startScan);
+$('toWait').addEventListener('click', () => { $('bottommsg').textContent = ''; mode = 'bottom'; show('s-bottom'); });
+$('goLive').addEventListener('click', armFaceDown);
+$('bottomFile').addEventListener('change', async e => {
+  const f = e.target.files[0]; if (!f) return; e.target.value = '';
+  $('bottommsg').textContent = 'Reading…';
+  const img = await fileToImage(f); let all = [];
+  for (const S of [...BOTTOM_SIZES, 384]) all = all.concat(await detect(img, 0, 0, img.naturalWidth, img.naturalHeight, S));
+  const d = known(all);
+  if (d) reveal(d.cls, `photo, ${Math.round(d.conf * 100)}% sure`);
+  else $('bottommsg').textContent = 'No card from the scan was seen. Try again, a little further away and in better light.';
+});
+$('manualBottom').addEventListener('change', e => { if (e.target.value) reveal(e.target.value, 'chosen by hand'); e.target.value = ''; });
+$('again').addEventListener('click', () => { $('bottommsg').textContent = ''; mode = 'bottom'; show('s-bottom'); });
+$('restart').addEventListener('click', () => { order = []; startScan(); });
+
+// Expose for automated tests.
+window.__app = { get order() { return order; }, set order(v) { order = v; renderChips(); }, armFaceDown, startSweep, scanner, get engine() { return engine; } };
+
+try {
+  await Promise.all([loadEngine(), startCamera()]);
+  if (!liveOK) $('perf').textContent = `${engine} · Live camera is blocked on this page, so this build uses photos. Host it on its own site for sweep scanning and face-down mode.`;
+  startScan();
+} catch (e) { $('loadmsg').textContent = 'Could not start: ' + e.message; }
+</script>
+</body>
+</html>
