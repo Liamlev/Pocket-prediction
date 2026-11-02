@@ -53,8 +53,9 @@ repo settings). The live camera does NOT work inside claude.ai artifact pages (c
   blocks completion (might be a real end/gap card) until seen again.
 - Gap = spacing > 1.7× median → "card missing between X and Y".
 - Both ends must be seen with open table beyond them (≥2 votes) unless all 52 are in.
-- Deck-size setting (default 52): the scan can't finish before that many cards. With 52 it finishes
-  the moment all 52 are confirmed.
+- "Cards in this deck": an exact count (default 52, remembered per phone) finishes the moment that
+  many are confirmed; "not sure" modes need a minimum plus both ends. Liam's current Bicycle test deck
+  has 47 cards (no 2♣ 2♥ 2♠ 3♣ A♦).
 - UI: full-screen camera with guide corners and a scan line; 52-card grid (grey unseen, amber checking,
   green confirmed); the done message shows the first and last card so Liam can glance at both ends
   (the only undetectable failure is an end card never read at all).

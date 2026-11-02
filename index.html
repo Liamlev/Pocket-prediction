@@ -175,13 +175,14 @@
       <option value="1">Reversed</option>
     </select>
   </label>
-  <label>Deck size (the scan can't turn green before this)
+  <label>Cards in this deck
+    <span><input id="deckCount" type="number" inputmode="numeric" min="2" max="52" value="52"
+      style="width:64px;background:#1b1a1f;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:7px;font-size:15px">
     <select id="deckSize">
-      <option value="52">Full deck: 52</option>
-      <option value="40">At least 40</option>
-      <option value="20">At least 20</option>
-      <option value="2">Any</option>
-    </select>
+      <option value="exact">exactly</option>
+      <option value="40">not sure: at least 40</option>
+      <option value="2">not sure: any</option>
+    </select></span>
   </label>
   <label>After the scan turns green
     <select id="autoArm">
@@ -318,7 +319,7 @@ let sweepN = 0, lastDets = [], doneAt = 0;
 function startSweep() {
   scanner.reset(); sweepN = 0; doneAt = 0; mode = 'sweep';
   $('sBarWrap').classList.remove('done');
-  renderMeter(scanner.state(performance.now(), +$('deckSize').value), 'few');
+  renderMeter(scanner.state(performance.now(), ...deckTarget()), 'few');
   show('s-sweep');
   runLoop(async (W, H) => {
     const S = SWEEP_SIZES[sweepN++ % SWEEP_SIZES.length];
@@ -326,7 +327,7 @@ function startSweep() {
     const now = performance.now();
     const r = scanner.addFrame(lastDets, now, { x0: 0, y0: 0, x1: W, y1: H });
     drawOverlay(W, H);
-    const st = scanner.state(now, +$('deckSize').value);
+    const st = scanner.state(now, ...deckTarget());
     renderMeter(st, r);
     if (st.complete && !doneAt) {
       doneAt = now; order = st.order;
@@ -336,6 +337,15 @@ function startSweep() {
     if (!st.complete) doneAt = 0;
   });
 }
+// Deck size: an exact count (scan finishes the moment all are confirmed) or a 'not sure' minimum.
+function deckTarget() {
+  if ($('deckSize').value !== 'exact') return [+$('deckSize').value, false];
+  const n = Math.max(2, Math.min(52, parseInt($('deckCount').value, 10) || 52));
+  return [n, true];
+}
+try { const saved = localStorage.getItem('deckCount'); if (saved) $('deckCount').value = saved; } catch (e) {}
+$('deckCount').addEventListener('change', () => { try { localStorage.setItem('deckCount', $('deckCount').value); } catch (e) {} });
+$('deckSize').addEventListener('change', () => { $('deckCount').style.visibility = $('deckSize').value === 'exact' ? 'visible' : 'hidden'; });
 // 52-card grid: grey = not seen, amber = seen but still checking, green = confirmed.
 const GRID_SUITS = ['S', 'H', 'C', 'D'], GRID_RANKS = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
 const SUIT_SYM = { S: '♠', H: '♥', C: '♣', D: '♦' };
@@ -356,8 +366,8 @@ function renderGrid(st) {
 }
 function renderMeter(st, r) {
   renderGrid(st);
-  const target = +$('deckSize').value;
-  $('sCount').innerHTML = `${st.order.length}<small> / ${target === 52 ? 52 : target > 2 ? target + '+' : '?'}</small>`;
+  const [target, exact] = deckTarget();
+  $('sCount').innerHTML = `${st.order.length}<small> / ${exact ? target : target > 2 ? target + '+' : '?'}</small>`;
   document.querySelector('.scanner').classList.toggle('done', st.complete);
   $('sBar').style.width = (100 * st.progress) + '%';
   const m = $('sMsg');
@@ -370,7 +380,7 @@ function renderMeter(st, r) {
   else if (st.pendingCards.length && st.enough) { m.textContent = 'Unsure about one card: go back over the spread'; m.className = 'meterMsg warn'; }
   else if (st.enough && !st.loEnd) { m.textContent = 'Go past the first card'; m.className = 'meterMsg warn'; }
   else if (st.enough && !st.hiEnd) { m.textContent = 'Go past the last card'; m.className = 'meterMsg warn'; }
-  else if (!st.enough) { m.textContent = `Keep going: ${$('deckSize').value === '52' ? 52 - st.order.length + ' to go' : 'not enough cards yet'}`; m.className = 'meterMsg'; }
+  else if (!st.enough) { m.textContent = `Keep going: ${exact ? target - st.order.length + ' to go' : 'not enough cards yet'}`; m.className = 'meterMsg'; }
   else { m.textContent = st.pending ? 'Reading…' : 'Hold still to finish'; m.className = 'meterMsg'; }
   // Strip: every confirmed card as a tick in its place along the spread, gaps in red.
   const p = st.positions, strip = $('strip');

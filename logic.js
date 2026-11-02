@@ -161,7 +161,8 @@
 
     // Snapshot for the meter.
     // minCards: fewest cards that can count as a whole spread (52 = full deck: done the moment all 52 are in).
-    state(now, minCards = 2) {
+    // exact: the deck has exactly minCards cards, so finish the moment all of them are confirmed.
+    state(now, minCards = 2, exact = false) {
       // Not yet confirmed (seen < minSeen times). It is dropped as a misread only if it sat on top of
       // a confirmed card. One seen in open space might be a real card at an end or in a gap, so it
       // keeps the scan from finishing until it is seen again (or a long time has passed).
@@ -185,7 +186,7 @@
       const settled = now - this.lastNewAt >= this.settleMs && this.frames - this.lastNewFrame >= 6;
       const enough = order.length >= Math.max(2, minCards);
       // Both ends must have been seen with open table past them (not needed once all 52 are in).
-      const full = order.length === 52;
+      const full = exact ? order.length >= minCards : order.length === 52;
       const loEnd = order.length ? (this.ends.lo.get(order[0].c) || 0) >= 2 : false;
       const hiEnd = order.length ? (this.ends.hi.get(order[order.length - 1].c) || 0) >= 2 : false;
       const endsOk = full || (loEnd && hiEnd);
