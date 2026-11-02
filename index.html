@@ -231,7 +231,7 @@ async function fetchParts(parts, onBytes) {
   return buf;
 }
 async function loadEngine() {
-  const TOTAL = 15000000 + 14520971 + 12000000 + 10373878; let got = 0;
+  const TOTAL = 15000000 + 14520971 + 12000000 + 10373851; let got = 0;
   const tick = n => { got += n; $('loadbar').style.width = (88 * got / TOTAL) + '%'; };
   ort = await import('./ort.min.mjs');
   const [wasm, model] = await Promise.all([fetchParts(['rt0.wasm', 'rt1.wasm'], tick), fetchParts(['md0.wasm', 'md1.wasm'], tick)]);

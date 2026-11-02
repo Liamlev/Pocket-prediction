@@ -61,7 +61,13 @@ repo settings). The live camera does NOT work inside claude.ai artifact pages (c
   (the only undetectable failure is an end card never read at all).
 - Counting is in reads, not seconds, so slow and fast phones behave the same.
 
-## Accuracy: the open problem (next step)
+## Accuracy
+Current reader (Nov 2026): fine-tuned on tiles cut from Liam's real Bicycle spread photos s2+s3
+(hand labels) + synthetic + public data. Held-out real photo s1 (47-card deck): 40/47 read, 0 wrong
+(previous reader: 39/47, 1 wrong). Training data/scripts lived in the session workspace (real/labels.py,
+make_real_tiles.py); more real photos is the best way to improve further.
+
+### Background: the original problem
 The off-the-shelf reader (`training/models/yolov8s_playing_cards.pt`) found ~40/52 on Liam's real
 spread with misreads: it was trained on mostly visible cards, not tight spreads where only thin,
 often upside-down corners show (6/9 confusion). On 98 real labelled photos it scored ~70%.
